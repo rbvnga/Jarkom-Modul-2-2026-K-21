@@ -9,6 +9,8 @@
 **rootkit harus merentangkan ke 5 gerbang utama (Switch), dengan menepatkan alamat IP dan default gateway, mulai dari para operator (alpha, beta, gamma), penjaga directory (prab, tedd), gerbang penyaring (abbey, penny), hingga repository (obladi, desmond, oblada, molly)**
 
 <img width="1262" height="1182" alt="soal1_topologi" src="https://github.com/user-attachments/assets/573a9be3-2f48-4c9f-beee-8672819de3d0" />
+
+
 - prab
 ```
 auto eth0
@@ -17,7 +19,9 @@ iface eth0 inet static
     netmask 255.255.255.0
     gateway 10.74.1.1
 ```
+
 - tedd
+
 ```
 auto eth0
 iface eth0 inet static
@@ -25,6 +29,7 @@ iface eth0 inet static
     netmask 255.255.255.0
     gateway 10.74.1.1
 ```
+
 - obladi
 ```
 auto eth0
