@@ -129,8 +129,28 @@ iface eth0 inet static
 
 ## 2
 **Membuka jalur menuju NAT dengan memastikan antar muka WAN di router rootkit aktif. Mengonfigurasi NAT agar dapat meneruskan lalu lintas keluar bagi alamat internal, sehingga semua host di dalam jaringan dapat menjangkau internet publik menggunakan IP address**
-Mengkonfigurasi NAT (Netwoek Address Translation) pada rootkit dilakukan agar dapat menerjemahkan setiap alamat IP privat client menjadi alamat IP publik ketika para client ingin mengakses internet.
-### Konfigurasi
+Mengkonfigurasi NAT (Netwoek Address Translation) pada rootkit dilakukan agar dapat menerjemahkan setiap alamat IP privat client menjadi alamat IP publik ketika para client ingin mengakses internet. langkah pertama adalah memastikan iptables ada dengan 
+```
+apt update
+apt install -y iptables
+```
+Kemudian konfigurasi `eth0` dan NAT pada `rootkit`
+```
+auto eth0
+iface eth0 inet dhcp
+up sysctl -w net.ipv4.ip_forward=1
+up iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE -s 10.74.0.0/16
+```
+Konfigurasi tersebut berfungsi untuk:
+- `up` → Menjalankan perintah ini ketika interface tersebut berhasil diaktifkan.
+- `eth0` → antarmuka WAN yang terhubung ke NAT.
+- `ip_forward=1` → mengaktifkan penerusan paket antarjaringan.
+- `MASQUERADE` → menerjemahkan IP privat client menjadi alamat IP pada eth0.
+- `10.74.0.0/16` → menentukan jaringan internal yang menggunakan NAT.
+
+### Pembuktian
+Pengujian dilakukan dari client `obladi` dengan melakukan `ping` ke alamat IP `8.8.8.8` untuk memastikan client dapat terhubung ke internet melalui router `rootkit`. Penggunaan alamat IP secara langsung memastikan pengujian tidak bergantung pada proses DNS.
+<img src="assets/soal1_pembuktian">
 
 ## 3
 **Memastikan setiap host non-router menambahkan resolver 192.168.122.1 saat antarmukanya aktif agar akses untuk mengunduh paket isntalasi dari internet tersedia sejak awal beroprasi**
