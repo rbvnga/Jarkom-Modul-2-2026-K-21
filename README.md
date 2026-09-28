@@ -18,6 +18,36 @@ Topologi ini dibangun dengan **rootkit** sebagai router utama yang juga terhubun
 5. Jalur repository dan directory, melalui Switch1 yang diteruskan ke Switch2 dan Switch3, yang menghubungkan prab, tedd, obladi, desmond, oblada, dan molly.
 
 ### Konfigurasi Jaringan
+- rootkit
+```
+auto eth0
+iface eth0 inet dhcp
+
+auto eth1
+iface eth1 inet static
+  address 10.74.1.1
+  netmask 255.255.255.0
+
+auto eth2
+iface eth2 inet static
+  address 10.74.2.1
+  netmask 255.255.255.0
+
+auto eth3
+iface eth3 inet static
+  address 10.74.3.1
+  netmask 255.255.255.0
+
+auto eth4
+iface eth4 inet static
+  address 10.74.4.1
+  netmask 255.255.255.0
+
+auto eth5
+iface eth5 inet static
+  address 10.74.5.1
+  netmask 255.255.255.0
+```
 - prab
 ```
 auto eth0
