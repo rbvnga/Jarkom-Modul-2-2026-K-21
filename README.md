@@ -184,6 +184,23 @@ Pengujian dilakukan dari client `obladi` dengan melakukan `ping` ke alamat IP `8
 
 ## 3
 **Memastikan setiap host non-router menambahkan resolver 192.168.122.1 saat antarmukanya aktif agar akses untuk mengunduh paket isntalasi dari internet tersedia sejak awal beroprasi**
+Konfigurasi dilakukan agar seluruh host pada jaringan internal dapat saling berkomunikasi antar-subnet dan dapat melakukan resolusi nama domain menggunakan DNS resolver `192.168.122.1`. <br> <br>
+Setiap host dikonfigurasi menggunakan IP address sesuai subnet masing-masing dan `rootkit` sebagai default gateway. Dengan demikian, paket dari satu subnet dapat diteruskan oleh `rootkit` menuju subnet lainnya. <br> <br>
+DNS resolver dikonfigurasi pada setiap host menggunakan:
+```bash
+echo "nameserver 192.168.122.1" > /etc/resolv.conf
+```
+### pembuktian
+- pengujian routing internal dilakukan dari **alpha** menuju host pada subnet lain, yaitu **abbey** dengan alamat `10.74.2.2`
+<img src="assets/soal3_pembuktian.png">
+- Pengujian DNS dilakukan dengan melakukan ping menggunakan nama domain:
+<img src="assets/soal3_pembuktian2.png">
 
 ## 4
+****
+Dalam skema ini, Prab bertindak sebagai server DNS master yang memegang kendali utama, sedangkan Tedd disiapkan sebagai server DNS slave. Kehadiran Tedd memastikan kontinuitas layanan ketika Prab tidak dapat beroperasi.
+## Konfigurasi Prab (DNS Master)
+## Konfigurasi Tedd (DNS Slave)
 
+## 5
+****
