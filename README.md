@@ -505,4 +505,50 @@ hostname
 Hasil
 <img width="747" height="260" alt="Tangkapan Layar 2026-09-29 pukul 17 41 09" src="https://github.com/user-attachments/assets/a23404f0-1ce5-44d9-8bb4-87ecbd1512d1" />
 
+## 6. 
+Pastikan zone transfer berjalan, pastikan tedd telah menerima salinan zona terbaru dari prab. Nilai serial SOA di keduanya harus sama karena keduanya tidak bisa dipisahkan dan saling melengkapi.
+
+## 6.1. Konfigurasi BIND9 Slave pada Node `tedd`
+Mengakses node`tedd`(`10.74.1.3`)dan mengonfigurasi file `/etc/bind/named.conf.local`
+agar bertindak sebagai DNS Slave:
+```c
+zone "K21.com" {
+    type slave;
+    file "/var/cache/bind/db.K21.com";
+    masters { 10.74.1.2; };
+};
+```
+## 6.2. Memuat ulang layanan BIND9 dengan perintah `service bind9 restart.`
+## 6.3. Verifikasi Pembentukan File Zone Transfer di Slave (`tedd`)
+Tujuan: Memastikan BIND9 Master `prab` berhasil men-transfer file zone ke BIND9 Slave `tedd`.
+
+Eksekusi:
+Menjalankan perintah `ls -l /var/cache/bind/db.K21.com di terminal` `tedd`.
+
+Hasil:
+<img width="731" height="35" alt="Tangkapan Layar 2026-09-29 pukul 22 38 56" src="https://github.com/user-attachments/assets/47813de5-2b13-4f93-ac5a-b4899b42a08e" />
+
+## 6.4. Membuktikan bahwa nilai Serial SOA di Master dan Slave 
+Tujuan: identik sebagai syarat mutlak sinkronisasi data DNS. Kesamaan Serial SOA antara Master dan Slave
+
+Eksekusi:
+Menjalankan query DNS SOA dari node client (molly) ke IP Master dan Slave secara berurutan
+`host -t SOA K21.com 10.74.1.2
+ host -t SOA K21.com 10.74.1.3`
+
+ Hasil:
+ <img width="644" height="158" alt="Tangkapan Layar 2026-09-29 pukul 22 43 46" src="https://github.com/user-attachments/assets/dd538580-d33a-4f52-a79d-a5f45a0c50e0" />
+
+ ## Verifikasi Otorisasi ZOne Transfer Menggunakan AXFR
+ Tujuan: Menguji apakah permintaan pemindahan seluruh database zone `AXFR` dari `tedd` dan `prab` diizinkan.
+
+ Eksekusi:
+ Menjalankan perintah `dig @10.74.1.2 K21.com AXFR` langsung di terminal `tedd`.
+
+ Hasil:
+ <img width="812" height="417" alt="Tangkapan Layar 2026-09-29 pukul 22 51 48" src="https://github.com/user-attachments/assets/47faed2f-c2cf-4259-86f8-c872d32d62ab" />
+
+
+
+
 
