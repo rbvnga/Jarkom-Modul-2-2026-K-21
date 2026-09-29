@@ -407,3 +407,102 @@ dig @10.74.1.3 K21.com
 
 ## 5
 **"Entitas tanpa identitas adalah anomali," pesan Rootkit. Namai semua Entitas (hostname) sesuai glosarium: rootkit, alpha, beta, gamma, delta, epsilon, prab, tedd, abbey, penny, obladi, desmond, oblada, molly, dan verifikasi bahwa setiap host mengenali hostname tersebut secara system-wide. Buat setiap domain untuk masing-masing node sesuai dengan namanya (contoh: alpha.<xxxx>.com) dan assign IP masing-masing juga. Lakukan pengecualian untuk node yang bertanggung jawab atas prab dan tedd.**
+
+## 1.Konfigurasi dulu hostname persisten(/root/script.sh)
+untuk memastikan hostname dan resolver DNS tetap aktif setiap kali node di reboot, dibuat script otomatis ```/root/script.s``` di setiap node.
+
+**Script pada node client**(`alpha`,`beta`,`gamma`,`delta`,`epsilon`,`abbey`,`penny`,`obladi`,`Desmond`,`oblada`,`molly`)
+
+```c
+NODE_NAME="<nama_node>"
+
+cat << EOF > /root/script.sh
+#!/bin/bash
+hostnamectl set-hostname $NODE_NAME 2>/dev/null || echo "$NODE_NAME" > /etc/hostname
+hostname $NODE_NAME
+
+cat <<RESOLV > /etc/resolv.conf
+nameserver 10.74.1.2
+nameserver 10.74.1.3
+nameserver 192.168.122.1
+RESOLV
+EOF
+
+chmod +x /root/script.sh
+bash /root/script.sh
+```
+**Script pada DNS Master.**
+```c
+cat << 'EOF' > /root/script.sh
+#!/bin/bash
+hostnamectl set-hostname prab 2>/dev/null || echo "prab" > /etc/hostname
+hostname prab
+
+cat <<RESOLV > /etc/resolv.conf
+nameserver 10.74.1.2
+nameserver 10.74.1.3
+nameserver 192.168.122.1
+RESOLV
+
+service bind9 restart
+EOF
+
+chmod +x /root/script.sh
+bash /root/script.sh
+```
+## 2. Pendaftaran A record pada Zone File BIND9
+Di node prab (`DNS Master`), file konfigurasi zona`/etc/bind/jarkom/K21.com` diperbarui dengan menambahkan resource record jenis A untuk seluruh node jaringan:
+
+```C
+$TTL    604800
+@       IN      SOA     K21.com. root.K21.com. (
+                     2026092901         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+@       IN      NS      prab.K21.com.
+@       IN      NS      tedd.K21.com.
+
+; DNS Server Record (Soal 4)
+prab    IN      A       10.74.1.2
+tedd    IN      A       10.74.1.3
+
+; Node Domain Mapping (Soal 5)
+alpha   IN      A       10.74.4.2
+beta    IN      A       10.74.4.3
+gamma   IN      A       10.74.4.4
+delta   IN      A       10.74.5.2
+epsilon IN      A       10.74.5.3
+abbey   IN      A       10.74.2.2
+penny   IN      A       10.74.3.2
+obladi  IN      A       10.74.1.4
+desmond IN      A       10.74.1.5
+oblada  IN      A       10.74.1.6
+molly   IN      A       10.74.1.7
+```
+Setelah dilakukan perubahan file zona, validasi syntax dan restart BIND9 dijalankan:
+```c
+# Cek validasi sintaks zone file di prab
+named-checkzone K21.com /etc/bind/jarkom/K21.com
+
+# Restart service BIND9 di prab dan tedd
+service bind9 restart
+```
+## 3. Pengujian
+pengujian bisa di node mana saja, saya mencoba dari node `Molly` menggunakan perintah host 
+```c
+host alpha.K21.com
+host beta.K21.com
+host abbey.K21.com
+host oblada.K21.com
+```
+pengujian hostname Ketik perintah ini di terminal node manapun (misal di molly atau alpha)
+```c
+hostname
+```
+Hasil
+<img width="747" height="260" alt="Tangkapan Layar 2026-09-29 pukul 17 41 09" src="https://github.com/user-attachments/assets/a23404f0-1ce5-44d9-8bb4-87ecbd1512d1" />
+
+
