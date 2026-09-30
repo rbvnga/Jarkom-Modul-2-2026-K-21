@@ -548,6 +548,49 @@ Menjalankan query DNS SOA dari node client (molly) ke IP Master dan Slave secara
  Hasil:
  <img width="812" height="417" alt="Tangkapan Layar 2026-09-29 pukul 22 51 48" src="https://github.com/user-attachments/assets/47faed2f-c2cf-4259-86f8-c872d32d62ab" />
 
+## 7.
+## 7.1  
+Tujuan: Menonfigurasi subdomain `vault.K21.com`(web statis) dan `core.K21.com`(web dinamis) dengan pemetaan multi-IP, serta menambahkan alias CNAME `WWWW` dan `static`
+selanjutnya menverifikasi konsistensi resolusi nama dari dua node klien berbeda.
+
+## 7.2
+Konfigurasi dan Pengujian
+### A. Pembaruan Zone File Master `prab`
+Mengedit file zona /etc/bind/jarkom/K21.com dan menaikkan Serial SOA menjadi 2026092903:
+```c
+; Web Statis (vault) & Web Dinamis (core)
+vault   IN      A       10.74.1.4
+vault   IN      A       10.74.1.5
+core    IN      A       10.74.1.6
+core    IN      A       10.74.1.7
+
+; Alias (CNAME)
+www     IN      CNAME   penny.K21.com.
+static  IN      CNAME   abbey.K21.com.
+```
+Perintah Eksekusi: `named-checkzone K21.com /etc/bind/jarkom/K21.com && service bind9 restart`
+
+### B. Verifikasi dari Dua klien berbeda
+pengujian pada klien 1 `aplha`
+```c
+host vault.K21.com
+host core.K21.com
+host www.K21.com
+host static.K21.com
+```
+Hasil: vault merespons IP 10.74.1.4 & 10.74.1.5, core merespons IP 10.74.1.6 & 10.74.1.7, www mengarah ke CNAME penny.K21.com (10.74.3.2), dan static mengarah ke CNAME abbey.K21.com (10.74.2.2).
+
+<img width="672" height="412" alt="Tangkapan Layar 2026-09-30 pukul 18 50 19" src="https://github.com/user-attachments/assets/a3bc8e1c-0921-41be-b289-e7c5edbdb1dd" />
+
+pengujian pada klien 2 `alpha`
+```c
+host vault.K21.com
+host core.K21.com
+host www.K21.com
+host static.K21.com
+```
+Hasil: 100% sama dengan hasil resolusi pada `alpha`
+<img width="704" height="416" alt="Tangkapan Layar 2026-09-30 pukul 18 50 36" src="https://github.com/user-attachments/assets/5209aacb-5d40-48e3-a382-646687109ef2" />
 
 
 
