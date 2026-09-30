@@ -833,7 +833,8 @@ curl -i http://core.K21.com/profil
 <img width="752" height="760" alt="Tangkapan Layar 2026-09-30 pukul 21 20 16" src="https://github.com/user-attachments/assets/b566da63-a589-437e-9adb-883f36bb73fc" />
 
 
-
+# 11
+**Konfigurasikan Penny (menggunakan Apache) sebagai reverse proxy yang mengarah ke semua node di area vault (Obladi & Desmond). Sementara itu, konfigurasikan Abbey (menggunakan Nginx) sebagai reverse proxy menuju area core (Oblada & Molly). Pastikan kedua gerbang ini meneruskan identitas asli pengunjung ke server backend dengan melakukan forwarding header Host dan X-Real-IP. Buktikan bahwa Penny dan Abbey berhasil mendistribusikan lalu lintas dengan tepat.**
 
 
 
