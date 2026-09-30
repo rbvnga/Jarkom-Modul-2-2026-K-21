@@ -758,6 +758,79 @@ curl -i http://vault.K21.com/arsip/
 ```
 <img width="751" height="456" alt="Tangkapan Layar 2026-09-30 pukul 20 09 00" src="https://github.com/user-attachments/assets/4c1e922d-2882-426e-8611-d65eba94bc0a" />
 
+## 10
+## 10.1 Deskripsi Soal & Tujuan
+Tujuan: Menyiapkan layanan web server dinamis menggunakan Nginx dan PHP-FPM di node area core (`oblada`: `10.74.1.6` dan `Molly`: `10.74.1.7`)
+
+Fitur Utama: Menyediakan aplikasi web sederhana (halaman Beranda dan Profil) serta menerapkan aturan URL Rewriting pada Nginx agar halaman profil dapat diakses menggunakan Clean URL (/`profil` tanpa ekstensi `.php`).
+
+Syarat Akses: Pengujian wajib dilakukan dari client menggunakan hostname `[http://core.K21.com/](http://core.K21.com/)` dan `[http://core.K21.com/profil](http://core.K21.com/profil).`
+
+## 10.2 Script
+### A. Konfigurasi Nginx & PHP-FPM di Node Area Core (oblada & molly)
+Jalankan perintah berikut pada terminal`oblada`dan`molly`:
+```c
+# 1. Update repositori dan install paket Nginx + PHP-FPM
+apt-get update && apt-get install -y nginx php-fpm
+
+# 2. Buat direktori web & file aplikasi PHP
+mkdir -p /var/www/core
+
+cat << 'EOF' > /var/www/core/index.php
+<?php
+echo "<h1>Selamat Datang di Halaman Beranda Node Core</h1>";
+echo "<p>Server IP: " . $_SERVER['SERVER_ADDR'] . "</p>";
+echo "<a href='/profil'>Ke Halaman Profil</a>";
+?>
+EOF
+
+cat << 'EOF' > /var/www/core/profil.php
+<?php
+echo "<h1>Halaman Profil Node Core</h1>";
+echo "<p>Ini adalah halaman profil dengan URL bersih (Clean URL).</p>";
+echo "<a href='/'>Kembali ke Beranda</a>";
+?>
+EOF
+
+# 3. Buat VirtualHost Nginx dengan aturan URL Rewrite
+cat << 'EOF' > /etc/nginx/sites-available/core
+server {
+    listen 80;
+    server_name core.K21.com oblada.K21.com molly.K21.com;
+    root /var/www/core;
+    index index.php index.html;
+
+    # Aturan Rewrite untuk Clean URL (/profil -> profil.php)
+    location / {
+        try_files $uri $uri/ $uri.php?$args;
+    }
+
+    # Teruskan eksekusi file .php ke socket PHP 8.4 FastCGI
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+EOF
+
+# 4. Aktifkan VirtualHost & restart service Nginx + PHP-FPM
+ln -sf /etc/nginx/sites-available/core /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+service php8.4-fpm restart
+nginx -t && service nginx restart
+```
+### B. Analisis perintah utama
+turan kunci untuk mengaktifkan Clean URL terletak pada direktif try_files $uri $uri/ $uri.php?$args;. Perintah ini memerintahkan Nginx mencari file secara berurutan; ketika URL /profil diakses, Nginx otomatis mengeksekusi file profil.php di latar belakang tanpa mengubah tampilan URL klien. Proses eksekusi script PHP tersebut diteruskan ke modul PHP-FPM melalui koneksi socket fastcgi_pass unix:/run/php/php8.4-fpm.sock;. Sementara itu, direktif index index.php; memastikan Nginx secara otomatis memuat file index.php saat domain core.K21.com diakses.
+
+## 10.3 Verifikasi pengujian
+Perintah pengujian dijalankan dari terminal client(`alpha`dan`beta`)
+```c
+curl -i http://core.K21.com/
+curl -i http://core.K21.com/profil
+```
+<img width="752" height="744" alt="Tangkapan Layar 2026-09-30 pukul 21 19 23" src="https://github.com/user-attachments/assets/6c7aad21-764d-4744-bf23-4ceba4e4f468" />
+<img width="752" height="760" alt="Tangkapan Layar 2026-09-30 pukul 21 20 16" src="https://github.com/user-attachments/assets/b566da63-a589-437e-9adb-883f36bb73fc" />
 
 
 
