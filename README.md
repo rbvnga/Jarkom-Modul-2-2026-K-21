@@ -592,6 +592,112 @@ host static.K21.com
 Hasil: 100% sama dengan hasil resolusi pada `alpha`
 <img width="704" height="416" alt="Tangkapan Layar 2026-09-30 pukul 18 50 36" src="https://github.com/user-attachments/assets/5209aacb-5d40-48e3-a382-646687109ef2" />
 
+## 8.
+## 8.1 Konfigurasi reserve DNS(PTR Record) Master & Slave
+Tujuan: Mendeklarasikan Reverse DNS Zone pada segmen jaringan abbey (10.74.2.x), penny (10.74.3.x), area vault (10.74.1.4 & 10.74.1.5), serta area core (10.74.1.6 & 10.74.1.7). Mengonfigurasi Master (prab) dan Slave (tedd) agar query pencarian balik IP (Reverse Lookup) mengembalikan hostname yang tepat dan bersifat authoritative.
+
+### A. Deklarasi & Pembuatan Zone File di DNS Master (prab)
+Deklarasi Zone pada /etc/bind/named.conf.local:
+```c
+zone "1.74.10.in-addr.arpa" {
+    type master;
+    file "/etc/bind/jarkom/1.74.10.in-addr.arpa";
+    notify yes;
+    allow-transfer { 10.74.1.3; };
+};
+
+zone "2.74.10.in-addr.arpa" {
+    type master;
+    file "/etc/bind/jarkom/2.74.10.in-addr.arpa";
+    notify yes;
+    allow-transfer { 10.74.1.3; };
+};
+
+zone "3.74.10.in-addr.arpa" {
+    type master;
+    file "/etc/bind/jarkom/3.74.10.in-addr.arpa";
+    notify yes;
+    allow-transfer { 10.74.1.3; };
+};
+```
+Isi File Reverse Zone (/etc/bind/jarkom/1.74.10.in-addr.arpa - Vault & Core):
+```c
+$TTL    604800
+@       IN      SOA     prab.K21.com. root.K21.com. (
+                        2026093001      ; Serial
+                        604800          ; Refresh
+                        86400           ; Retry
+                        2419200         ; Expire
+                        604800 )        ; Negative Cache TTL
+;
+@       IN      NS      prab.K21.com.
+@       IN      NS      tedd.K21.com.
+
+4       IN      PTR     obladi.K21.com.
+5       IN      PTR     desmond.K21.com.
+6       IN      PTR     oblada.K21.com.
+7       IN      PTR     molly.K21.com.
+```
+Isi File Reverse Zone 2 & 3 (`2.74.10` & `3.74.10)`:
+`2.74.10.in-addr.arpa` (Abbey): `2 IN PTR abbey.K21.com.`
+`3.74.10.in-addr.arpa` (Penny): `2 IN PTR penny.K21.com.`
+
+### B. Konfigurasi Pull Zone di DNS Slave (tedd)
+Menambahkan deklarasi slave zone pada /etc/bind/named.conf.local:
+```c
+zone "1.74.10.in-addr.arpa" {
+    type slave;
+    file "/var/cache/bind/db.1.74.10";
+    masters { 10.74.1.2; };
+};
+
+zone "2.74.10.in-addr.arpa" {
+    type slave;
+    file "/var/cache/bind/db.2.74.10";
+    masters { 10.74.1.2; };
+};
+
+zone "3.74.10.in-addr.arpa" {
+    type slave;
+    file "/var/cache/bind/db.3.74.10";
+    masters { 10.74.1.2; };
+};
+```
+## 8.2. Hasil Verifikasi & Pengujian
+### A. Verifikasi Hasil Zone Transfer di Slave (tedd)
+Perintah: ls -la /var/cache/bind/
+
+Hasil: File db.1.74.10, db.2.74.10, dan db.3.74.10 berhasil diterima dan tersimpan otomatis dari Master (prab).
+<img width="712" height="125" alt="Tangkapan Layar 2026-09-30 pukul 19 11 08" src="https://github.com/user-attachments/assets/c5c3874f-e301-4133-8a67-9eebe9ccba82" />
+
+### B. Testing Reverse Lookup dari Klien (alpha)
+Menguji query resolusi balik IP ke DNS Master (10.74.1.2) dan DNS Slave (10.74.1.3):
+
+Query ke DNS Master (10.74.1.2):
+```c
+host 10.74.2.2 10.74.1.2
+host 10.74.3.2 10.74.1.2
+host 10.74.1.4 10.74.1.2
+host 10.74.1.6 10.74.1.2
+```
+Hasil:
+`10.74.2.2` → `abbey.K21.com.`
+`10.74.3.2` → `penny.K21.com.`
+`10.74.1.4` → `obladi.K21.com.`
+`10.74.1.6` → `oblada.K21.com.`
+Query ke DNS Slave (10.74.1.3):
+```c
+host 10.74.2.2 10.74.1.3
+host 10.74.3.2 10.74.1.3
+host 10.74.1.4 10.74.1.3
+host 10.74.1.6 10.74.1.3
+```
+Hasil: Respon dari Slave identik 100% dengan Master, membuktikan bahwa Slave server telah bertindak sebagai otoritas (authoritative) untuk seluruh zone PTR tersebu
+<img width="721" height="770" alt="Tangkapan Layar 2026-09-30 pukul 19 14 45" src="https://github.com/user-attachments/assets/ee8b0c64-d1e6-40ae-bf4f-5e24edf46bfb" />
+
+
+
+
 
 
 
