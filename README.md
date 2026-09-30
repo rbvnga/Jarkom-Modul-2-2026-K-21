@@ -695,6 +695,73 @@ host 10.74.1.6 10.74.1.3
 Hasil: Respon dari Slave identik 100% dengan Master, membuktikan bahwa Slave server telah bertindak sebagai otoritas (authoritative) untuk seluruh zone PTR tersebu
 <img width="721" height="770" alt="Tangkapan Layar 2026-09-30 pukul 19 14 45" src="https://github.com/user-attachments/assets/ee8b0c64-d1e6-40ae-bf4f-5e24edf46bfb" />
 
+## 9 Konfigurasi Web Server Statis & Autoindex pada Area Vault
+## 9.1 Deskripsi Soal & Tujuan
+Tujuan: Menyiapkan layanan web statis menggunakan Apache2 pada node area vault (obladi: 10.74.1.4 dan desmond: 10.74.1.5).
+Fitur Utama: Mengaktifkan fitur Autoindex (directory listing) pada direktori /arsip/ sehingga seluruh daftar file di dalamnya dapat dilihat dan diunduh secara langsung dari browser/curl.
+Syarat Akses: Pengujian wajib dilakukan melalui domain `http://vault.K21.com/arsip/](http://vault.K21.com/arsip/)` (bukan melalui alamat IP langsung).
+
+## 9.2 Langkah Implemetasi Script
+### A. Konfigurasi Apache di Node Area Vault (obladi & desmond)
+Jalankan perintah berikut di terminal obladi dan desmond:
+```c
+# 1. Update repositori dan install paket web server Apache2
+apt-get update && apt-get install -y apache2
+
+# 2. Membuat direktori /arsip/ di DocumentRoot Apache beserta file sampel
+mkdir -p /var/www/html/arsip
+echo "Dokumen Rahasia Vault 1" > /var/www/html/arsip/dokumen1.txt
+echo "Laporan Keuangan" > /var/www/html/arsip/laporan.pdf
+touch /var/www/html/arsip/backup.zip
+
+# 3. Membuat file VirtualHost untuk domain vault.K21.com
+cat << 'EOF' > /etc/apache2/sites-available/vault.conf
+<VirtualHost *:80>
+    ServerName vault.K21.com
+    ServerAlias obladi.K21.com desmond.K21.com
+    DocumentRoot /var/www/html
+
+    # Mengaktifkan Directory Listing (Autoindex) untuk folder /arsip/
+    <Directory /var/www/html/arsip>
+        Options +Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+</VirtualHost>
+EOF
+```
+```c
+a2enmod autoindex
+a2ensite vault.conf
+a2dissite 000-default.conf
+service apache2 restart
+```
+### B. Konfigurasi DNS Resolver pada Client (beta)
+Arahkan resolver DNS di node beta ke Master DNS (10.74.1.2) dan Slave DNS (10.74.1.3):
+```c
+cat << 'EOF' > /etc/resolv.conf
+nameserver 10.74.1.2
+nameserver 10.74.1.3
+EOF
+```
+## 9.3 Verifikasi & Pengujian
+Perintah pengujian dijalankan dari terminal `beta`:
+Uji Resolusi Domain Hostname:
+```c
+host vault.K21.com
+```
+Hasil: Hostname vault.K21.com berhasil diterjemahkan ke IP 10.74.1.4 (obladi) dan 10.74.1.5 (desmond)
+
+Uji Akses Web Directory Listing (/arsip/):
+```c
+curl -i http://vault.K21.com/arsip/
+```
+<img width="751" height="456" alt="Tangkapan Layar 2026-09-30 pukul 20 09 00" src="https://github.com/user-attachments/assets/4c1e922d-2882-426e-8611-d65eba94bc0a" />
+
+
+
+
+
 
 
 
