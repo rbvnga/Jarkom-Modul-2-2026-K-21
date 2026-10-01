@@ -1559,7 +1559,7 @@ curl http://abbey.K21.com/
 
 Kedua path root tetap berhasil mengembalikan respons dari backend (obladi/desmond untuk Penny, oblada/molly untuk Abbey) melalui mekanisme *load balancing*, membuktikan directive `ProxyPass "/eternal" "!"` dan `ProxyPass "/orion" "!"` berhasil mengecualikan path khusus tanpa mengganggu aturan `ProxyPass "/"` yang sudah ada.
 
-## 16
+# 16
 ### Melakukan pengujianMenguji ketahanan gerbang The Mesh (Reverse Proxy) dalam
 ### A. menghadapi bombardir trafik/permintaan secara bersamaan menggunakan utilitas ApacheBench (ab) pada dua titik akhir (endpoints): domain utama ([www.K21.com](https://www.K21.com)) dan domain statis (static.K21.com).
 
@@ -1570,5 +1570,132 @@ Kedua path root tetap berhasil mengembalikan respons dari backend (obladi/desmon
 
 ### C. Hasil 
 
+# 17
+**Tambahkan TXT record pada DNS untuk semua klien sayap kiri dan sayap kanan (Alpha, Beta, Gamma, Delta, Epsilon). Jika DNS di-query TXT terhadap nama domain mereka (contoh: alpha.<xxxx>.com), sistem harus mengembalikan teks berupa nama hostname mereka masing-masing (contoh: "alpha").**
 
+Menambahkan **TXT record** pada DNS untuk seluruh klien sayap kiri dan sayap kanan, yaitu **alpha, beta, gamma, delta, epsilon**. Jika DNS di-query TXT terhadap nama domain mereka (contoh: `alpha.K21.com`), sistem harus mengembalikan teks berupa nama hostname masing-masing (contoh: `"alpha"`).
+
+TXT record adalah jenis record DNS yang menyimpan **teks bebas (string)**, berbeda dari:
+
+- **A record**: memetakan nama ke alamat IPv4
+- **CNAME**: memetakan nama ke nama lain (alias)
+
+TXT record umum dipakai untuk verifikasi domain, SPF/DKIM, atau menyimpan informasi tambahan. Pada soal ini, TXT record dipakai untuk menyimpan **nama hostname** tiap klien sebagai metadata.
+
+
+## 4. Langkah Pengerjaan
+
+### 4.1 Menambahkan TXT Record pada Zona (node `prab`)
+
+Edit file `setup_prab.sh`:
+
+```bash
+nano /root/setup_prab.sh
+```
+
+Pada blok zona `K21.com`, ditambahkan TXT record setelah A record node (dari soal 5):
+
+```bind
+; Node Domain Mapping (Soal 5)
+alpha   IN      A       10.74.4.2
+beta    IN      A       10.74.4.3
+gamma   IN      A       10.74.4.4
+delta   IN      A       10.74.5.2
+epsilon IN      A       10.74.5.3
+abbey   IN      A       10.74.2.2
+penny   IN      A       10.74.3.2
+obladi  IN      A       10.74.1.4
+desmond IN      A       10.74.1.5
+oblada  IN      A       10.74.1.6
+molly   IN      A       10.74.1.7
+
+; TXT Record Klien (Soal 17)
+alpha   IN      TXT     "alpha"
+beta    IN      TXT     "beta"
+gamma   IN      TXT     "gamma"
+delta   IN      TXT     "delta"
+epsilon IN      TXT     "epsilon"
+```
+
+> **Catatan penting:** nilai **serial SOA dinaikkan** (contoh: `2026093003` → `2026093004`) agar BIND pada `tedd` mengetahui ada perubahan dan menarik ulang zona (zone transfer).
+
+### 4.2 Menjalankan Ulang Script
+
+```bash
+bash /root/setup_prab.sh
+```
+
+Script akan menulis ulang file zona, lalu me-restart/reload layanan BIND9 sehingga record baru aktif.
+
+### 4.3 Memastikan Konfigurasi Persisten
+
+Urutan resolver mengikuti soal 4: IP prab, IP tedd, lalu `192.168.122.1`.
+
+## 5. Hasil Verifikasi
+
+### 5.1 Verifikasi di `prab` (Master)
+
+Perintah:
+
+```bash
+dig alpha.K21.com TXT
+dig beta.K21.com TXT
+dig gamma.K21.com TXT
+dig delta.K21.com TXT
+dig epsilon.K21.com TXT
+```
+
+Hasil (ringkasan dari output `dig`):
+
+| Query | Status | Flags | ANSWER SECTION | SERVER |
+|---|---|---|---|---|
+| `alpha.K21.com TXT` | NOERROR | qr **aa** rd ra | `alpha.K21.com. 604800 IN TXT "alpha"` | 10.74.1.2#53 |
+| `beta.K21.com TXT` | NOERROR | qr **aa** rd ra | `beta.K21.com. 604800 IN TXT "beta"` | 10.74.1.2#53 |
+| `gamma.K21.com TXT` | NOERROR | qr **aa** rd ra | `gamma.K21.com. 604800 IN TXT "gamma"` | 10.74.1.2#53 |
+| `delta.K21.com TXT` | NOERROR | qr **aa** rd ra | `delta.K21.com. 604800 IN TXT "delta"` | 10.74.1.2#53 |
+| `epsilon.K21.com TXT` | NOERROR | qr **aa** rd ra | `epsilon.K21.com. 604800 IN TXT "epsilon"` | 10.74.1.2#53 |
+
+<img src="assets/soal17_cek prab.png">
+
+**Analisis:** seluruh query menghasilkan `status: NOERROR` dengan flag `aa` (*authoritative answer*), artinya jawaban berasal langsung dari server yang berwenang atas zona `K21.com`, dan nilai TXT sesuai dengan nama hostname masing-masing.
+
+### 5.2 Verifikasi Zone Transfer di `tedd` (Slave)
+
+Perintah:
+
+```bash
+dig @10.74.1.3 alpha.K21.com TXT
+```
+<img src="assets/soal17_cek tedd.png">
+
+**Analisis:** `tedd` menjawab dengan flag `aa` dan nilai TXT yang identik dengan `prab`. Ini membuktikan **zone transfer berjalan normal** dan `tedd` sudah menerima salinan zona terbaru, termasuk TXT record yang baru ditambahkan.
+
+### 5.3 Verifikasi dari Klien (`gamma`)
+
+Perintah dijalankan dari klien `gamma` (bukan prab/tedd):
+
+```bash
+dig alpha.K21.com TXT
+dig beta.K21.com TXT
+dig gamma.K21.com TXT
+dig epsilon.K21.com TXT
+dig delta.K21.com TXT
+```
+
+Hasil:
+
+| Query | Status | Flags | Jawaban TXT | SERVER | Waktu |
+|---|---|---|---|---|---|
+| `alpha.K21.com` | NOERROR | qr aa rd ra | `"alpha"` | 10.74.1.2#53 | 16:15:09 |
+| `beta.K21.com` | NOERROR | qr aa rd ra | `"beta"` | 10.74.1.2#53 | 16:15:21 |
+| `gamma.K21.com` | NOERROR | qr aa rd ra | `"gamma"` | 10.74.1.2#53 | 16:15:25 |
+| `epsilon.K21.com` | NOERROR | qr aa rd ra | `"epsilon"` | 10.74.1.2#53 | 16:15:30 |
+| `delta.K21.com` | NOERROR | qr aa rd ra | `"delta"` | 10.74.1.2#53 | 16:15:58 |
+
+<img src="assets/soal17_cek client luar.png">
+**Analisis:**
+
+- Baris `SERVER: 10.74.1.2#53` menunjukkan klien memakai **prab** sebagai DNS resolver, bukan forwarder luar (`192.168.122.1`).
+- Klien di jaringan `10.74.4.0/24` (Switch6) dapat menjangkau DNS server di `10.74.1.0/24` melalui routing `rootkit`, sehingga konektivitas lintas segmen (soal 3) terbukti berfungsi.
+- Setiap TXT record mengembalikan nama hostname yang tepat.
 
