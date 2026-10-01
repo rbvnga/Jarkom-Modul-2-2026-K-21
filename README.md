@@ -1699,6 +1699,112 @@ Hasil:
 - Klien di jaringan `10.74.4.0/24` (Switch6) dapat menjangkau DNS server di `10.74.1.0/24` melalui routing `rootkit`, sehingga konektivitas lintas segmen (soal 3) terbukti berfungsi.
 - Setiap TXT record mengembalikan nama hostname yang tepat.
 
+# 18
+Mengubah A record `abbey.K21.com` ke IP fiktif (acak, format valid), menaikkan serial SOA di **prab**, memastikan **tedd** ikut tersinkron, dan menetapkan **TTL 15 detik** pada record tersebut. Perilaku diverifikasi pada tiga fase pencarian:
+ 
+1. **Sebelum perubahan:** mengembalikan IP lama.
+2. **Saat perubahan baru terjadi (dalam jeda 15 detik):** masih IP lama karena cache.
+3. **Setelah TTL habis:** berubah ke IP fiktif yang baru.
+## 2. Rancangan
+| Item | Nilai |
+|---|---|
+| Record | `abbey.K21.com` (A) |
+| IP lama | `10.74.2.2` |
+| IP fiktif baru | `203.0.113.18` |
+| TTL record | 15 detik |
+| Serial SOA lama | `2026093014` |
+| Serial SOA baru | `2026093015` |
+| Klien penguji | alpha, lewat resolver cache lokal `127.0.0.1:5353` |
+ 
+IP `203.0.113.18` termasuk blok dokumentasi TEST-NET-3 (RFC 5737). Formatnya valid dan tidak dipakai host nyata, sehingga aman sebagai IP fiktif.
+ 
+## 3. Konfigurasi di prab
+Perubahan dilakukan pada `setup_prab.sh`, sebab file zona ditulis ulang oleh script. Record abbey diberi TTL 15 detik per-record, sedangkan `$TTL` default zona tidak diubah.
+ 
+```
+; sebelum
+abbey   15      IN      A       10.74.2.2
+; sesudah
+abbey   15      IN      A       203.0.113.18
+```
+ 
+Serial dinaikkan, lalu script dijalankan ulang:
+ 
+```bash
+sed -i 's/^abbey   15      IN      A       10.74.2.2/abbey   15      IN      A       203.0.113.18/' /root/setup_prab.sh
+sed -i 's/2026093014      ; Serial/2026093015      ; Serial/' /root/setup_prab.sh
+bash /root/setup_prab.sh
+```
+ 
+Output prab menunjukkan zona termuat dengan serial baru dan `named` dimulai ulang:
+ 
+```
+zone K21.com/IN: loaded serial 2026093015
+OK
+Starting domain name service...: named.
+abbey.K21.com.    15    IN    A    203.0.113.18
+```
+ 
+Perintah dijalankan tepat pada **18:07:30 UTC**, dengan `date` dicetak sebagai penanda waktu perubahan.
+ 
+## 4. Sinkronisasi ke tedd
+Dicek di tedd sebelum dan sesudah perubahan:
+ 
+```
+root@tedd:~# dig @10.74.1.3 K21.com SOA +short
+prab.K21.com. root.K21.com. 2026093014 604800 86400 2419200 604800
+root@tedd:~# dig @10.74.1.3 abbey.K21.com +noall +answer
+abbey.K21.com.    15    IN    A    10.74.2.2
+ 
+root@tedd:~# dig @10.74.1.3 K21.com SOA +short
+prab.K21.com. root.K21.com. 2026093015 604800 86400 2419200 604800
+root@tedd:~# dig @10.74.1.3 abbey.K21.com +noall +answer
+abbey.K21.com.    15    IN    A    203.0.113.18
+```
+ 
+Serial tedd ikut naik ke `2026093015` dan record abbey ikut berubah, jadi zone transfer (notify + allow-transfer) berjalan.
+ 
+## 5. Verifikasi tiga fase (dari alpha)
+Agar tidak bergantung pada kecepatan berpindah console, alpha menjalankan query berulang tiap 2 detik ke resolver cache lokal. Baris `flags` ditampilkan untuk membedakan jawaban dari prab (`aa`) dan dari cache (tanpa `aa`).
+ 
+```bash
+for i in $(seq 1 40); do date +%T; dig @127.0.0.1 -p 5353 abbey.K21.com +noall +answer +comments | grep -E "flags|abbey"; sleep 2; done
+```
+ 
+Hasil, dengan perubahan di prab pada **18:07:30**:
+ 
+| Jam (UTC) | IP | TTL | Flag `aa` | Fase |
+|---|---|---|---|---|
+| 18:07:29 | 10.74.2.2 | 15 | ada | **Sebelum** (jawaban dari prab, IP lama) |
+| 18:07:31 | 10.74.2.2 | 13 | tidak | **Saat** (cache) |
+| 18:07:33 | 10.74.2.2 | 11 | tidak | **Saat** (cache) |
+| 18:07:35 | 10.74.2.2 | 9 | tidak | **Saat** (cache) |
+| 18:07:37 | 10.74.2.2 | 7 | tidak | **Saat** (cache) |
+| 18:07:40 | 10.74.2.2 | 4 | tidak | **Saat** (cache) |
+| 18:07:42 | 10.74.2.2 | 2 | tidak | **Saat** (cache) |
+| 18:07:44 | 203.0.113.18 | 15 | ada | **Sesudah** (TTL habis, diambil ulang dari prab) |
+| 18:07:46 | 203.0.113.18 | 13 | tidak | Cache IP baru |
+| 18:07:48 | 203.0.113.18 | 11 | tidak | Cache IP baru |
+| 18:07:50 | 203.0.113.18 | 9 | tidak | Cache IP baru |
+| 18:07:52 | 203.0.113.18 | 7 | tidak | Cache IP baru |
+| 18:07:54 | 203.0.113.18 | 5 | tidak | Cache IP baru |
+ 
+Pengecekan awal sebelum perubahan (alpha, 17:48:50) juga menunjukkan IP lama:
+ 
+```
+root@alpha:~# dig @127.0.0.1 -p 5353 abbey.K21.com
+;; flags: qr aa rd ra; ...
+abbey.K21.com.    15    IN    A    10.74.2.2
+```
+ 
+## 6. Analisis
+1. **Sebelum:** query pukul 18:07:29 dijawab langsung oleh prab (flag `aa`) dengan IP lama `10.74.2.2` dan TTL 15. Jawaban ini masuk ke cache alpha.
+2. **Saat:** prab diubah pada 18:07:30, tetapi dari 18:07:31 sampai 18:07:42 alpha masih menjawab `10.74.2.2` dengan TTL menurun (13, 11, 9, 7, 4, 2) dan tanpa flag `aa`. Jadi jawaban berasal dari cache, bukan dari prab yang sudah berisi IP baru.
+3. **Sesudah:** cache dimasukkan pukul 18:07:29 dengan TTL 15, sehingga kedaluwarsa pukul 18:07:44. Tepat pada saat itu alpha mengambil ulang dari prab (flag `aa` muncul kembali) dan memperoleh `203.0.113.18`, lalu TTL kembali menurun dari 15.
+Waktu kedaluwarsa cocok dengan perhitungan: `18:07:29 + 15 detik = 18:07:44`.
+ 
+## 7. Kesimpulan
+A record `abbey.K21.com` berhasil diubah ke IP fiktif `203.0.113.18`, serial SOA dinaikkan dari `2026093014` ke `2026093015`, dan tedd ikut tersinkron. TTL 15 detik terbukti bekerja pada tiga fase: IP lama sebelum perubahan, IP lama yang tertahan cache (TTL menurun) sesaat setelah perubahan, dan IP baru setelah TTL habis.
 
 # 19
 ## 1. Soal
