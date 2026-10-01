@@ -1202,3 +1202,359 @@ curl -I http://10.74.2.2/
 ```
 <img width="533" height="316" alt="soal13_pembuktian2" src="https://github.com/user-attachments/assets/86a75c0b-45c6-466b-b4b6-4a37b5991108" />
 
+# 14
+**Di dalam The Mesh, rekam jejak tidak boleh dipalsukan oleh sistem. Pastikan access log pada setiap server web di area vault maupun area core mencatat alamat IP asli milik client (pengunjung) yang diteruskan oleh gerbang, dan bukan mencatat IP dari Penny ataupun Abbey.**
+
+## 14.1 Konfigurasi pada Obladi dan Desmond (Area Vault — Apache)
+ 
+Secara default, kolom IP pada *access log* Apache (`%h`) mencatat IP dari koneksi TCP yang langsung terhubung ke backend — dalam kasus ini adalah IP **Penny** (10.74.3.2) sebagai reverse proxy, bukan IP klien asli. Modul `mod_remoteip` digunakan untuk mengganti nilai tersebut dengan IP asli yang sudah diteruskan Penny melalui header `X-Real-IP` (lihat Soal 11).
+ 
+### Aktivasi modul
+ 
+```bash
+a2enmod remoteip
+```
+ 
+### Perubahan konfigurasi
+ 
+Ditambahkan pada `/etc/apache2/sites-available/vault.conf`, di dalam blok `<VirtualHost>`:
+ 
+```apache
+RemoteIPHeader X-Real-IP
+RemoteIPTrustedProxy 10.74.3.2
+```
+ 
+**Penjelasan:**
+- `RemoteIPHeader X-Real-IP` — memberi tahu Apache untuk membaca IP asli klien dari header `X-Real-IP`, bukan dari koneksi TCP langsung.
+- `RemoteIPTrustedProxy 10.74.3.2` — membatasi kepercayaan hanya pada request yang datang dari IP Penny. Tanpa pembatasan ini, klien mana pun bisa memalsukan header `X-Real-IP` miliknya sendiri untuk menipu catatan log.
+Dengan modul ini aktif, kolom `%h` pada `CustomLog` (format `combined` maupun format kustom dari Soal 11) otomatis terisi IP klien asli, tanpa perlu mengubah format log itu sendiri.
+ 
+### Restart layanan
+ 
+```bash
+apache2ctl configtest
+service apache2 restart
+```
+ 
+Langkah yang sama diterapkan identik di **obladi** dan **desmond**.
+ 
+---
+ 
+## 14.2 Konfigurasi pada Abbey (Area Core — Apache Reverse Proxy)
+ 
+Saat konfigurasi `core-proxy.conf` milik Abbey diperbarui pada Soal 11 untuk menambahkan directive `RewriteEngine`, `RewriteCond`, dan `RewriteRule` (teknik penangkapan IP klien ke header `X-Real-IP`), modul `mod_rewrite` belum diaktifkan. Hal ini menyebabkan Apache gagal restart dengan galat:
+ 
+```
+AH00526: Syntax error on line 9 of /etc/apache2/sites-enabled/core-proxy.conf:
+Invalid command 'RewriteEngine', perhaps misspelled or defined by a module not included in the server configuration
+```
+ 
+### Perbaikan — aktivasi modul yang kurang
+ 
+```bash
+a2enmod rewrite
+```
+ 
+Setelah modul ini diaktifkan dan Apache di-restart, directive `RewriteEngine` pada `core-proxy.conf` dapat berjalan sehingga header `X-Real-IP` berhasil diteruskan ke backend area core (oblada & molly).
+ 
+---
+ 
+## 14.3 Konfigurasi pada Oblada dan Molly (Area Core — Nginx)
+ 
+Berbeda dengan Apache, Nginx menyediakan modul `ngx_http_realip_module` secara *built-in* sehingga tidak memerlukan aktivasi modul terpisah. Konfigurasi `set_real_ip_from` dan `real_ip_header` ditambahkan langsung pada blok `server` di Nginx.
+ 
+### Perubahan yang ditambahkan dari konfigurasi sebelumnya (Soal 10)
+ 
+1. Dua baris baru pada blok `server { }` di `/etc/nginx/sites-available/core`:
+```nginx
+   set_real_ip_from 10.74.2.2;
+   real_ip_header X-Real-IP;
+```
+   - `set_real_ip_from 10.74.2.2` — menetapkan IP Abbey sebagai satu-satunya sumber yang dipercaya untuk menyuntikkan header `X-Real-IP`.
+   - `real_ip_header X-Real-IP` — membaca IP klien asli dari header tersebut, lalu menggantikan nilai `$remote_addr` pada *access log* dan variabel `$_SERVER['REMOTE_ADDR']` di PHP.
+2. Satu baris tambahan pada `index.php` untuk menampilkan IP klien asli secara langsung sebagai bukti visual:
+```php
+   echo "<p>Remote Addr (klien asli): " . $_SERVER['REMOTE_ADDR'] . "</p>\n";
+```
+   Seluruh baris `echo` juga diakhiri dengan `\n` agar keluaran lebih rapi saat diperiksa melalui `curl`.
+ 
+### Script lengkap `setup_oblada.sh` (identik untuk `setup_molly.sh`)
+ 
+```bash
+#!/bin/bash
+set -e
+ 
+apt -o Acquire::Check-Valid-Until=false update
+apt install -y nginx php-fpm
+ 
+PHP_VERSION=$(ls /etc/php/ | head -n1)
+echo "Terdeteksi PHP versi: ${PHP_VERSION}"
+ 
+mkdir -p /var/www/core
+ 
+cat << 'EOF' > /var/www/core/index.php
+<?php
+echo "<h1>Selamat Datang di Halaman Beranda Node Core</h1>\n";
+echo "<p>Server IP: " . $_SERVER['SERVER_ADDR'] . "</p>\n";
+echo "<p>Remote Addr (klien asli): " . $_SERVER['REMOTE_ADDR'] . "</p>\n";
+echo "<a href='/profil'>Ke Halaman Profil</a>\n";
+?>
+EOF
+ 
+cat << 'EOF' > /var/www/core/profil.php
+<?php
+echo "<h1>Halaman Profil Node Core</h1>";
+echo "<p>Ini adalah halaman profil dengan URL bersih (Clean URL).</p>";
+echo "<a href='/'>Kembali ke Beranda</a>";
+?>
+EOF
+ 
+cat << EOF > /etc/nginx/sites-available/core
+server {
+    listen 80;
+    server_name core.K21.com oblada.K21.com molly.K21.com;
+    root /var/www/core;
+    index index.php index.html;
+ 
+    set_real_ip_from 10.74.2.2;
+    real_ip_header X-Real-IP;
+ 
+    location / {
+        try_files \$uri \$uri/ \$uri.php?\$args;
+    }
+ 
+    location ~ \.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+    }
+}
+EOF
+ 
+ln -sf /etc/nginx/sites-available/core /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+ 
+service php${PHP_VERSION}-fpm restart
+nginx -t && service nginx restart
+```
+ 
+---
+ 
+## 14.4 Ringkasan Perubahan
+ 
+| Node | Sebelumnya | Ditambahkan | Tujuan |
+|---|---|---|---|
+| Obladi, Desmond | `mod_remoteip` belum aktif | `a2enmod remoteip` + `RemoteIPHeader`, `RemoteIPTrustedProxy` pada `vault.conf` | Mengganti `%h` pada access log Apache menjadi IP klien asli |
+| Abbey | `mod_rewrite` belum aktif (menyebabkan error saat Soal 11) | `a2enmod rewrite` | Mengaktifkan directive `RewriteEngine` agar header `X-Real-IP` berhasil diteruskan ke backend area core |
+| Oblada, Molly | `realip` belum dikonfigurasi | `set_real_ip_from`, `real_ip_header` pada config Nginx + baris tampilan `REMOTE_ADDR` di `index.php` | Mengganti `$remote_addr` pada access log Nginx dan `$_SERVER['REMOTE_ADDR']` menjadi IP klien asli |
+ 
+---
+ 
+## 14.5 Pembuktian
+ 
+### Verifikasi Area Vault (Apache)
+ 
+Dijalankan dari klien lain (console gamma):
+
+```bash
+curl http://penny.K21.com/arsip/
+```
+ 
+**Hasil pada Obladi:**
+ 
+<img src="assets/soal14_pembuktian obladi.png">
+
+**Hasil pada Desmond:**
+ 
+<img src="assets/soal14_pembuktian desmond.png">
+
+Pada kedua access log di atas, kolom IP (`%h`) menunjukkan alamat IP klien asli (gamma), **bukan** alamat IP Penny (10.74.3.2), membuktikan `mod_remoteip` berhasil bekerja.
+ 
+### Verifikasi Area Core (Nginx)
+ 
+Dijalankan dari klien lain (console gamma):
+```bash
+curl http://abbey.K21.com/
+```
+ 
+<img src="assets/soal14_pembuktian abbey.png">
+
+Baris **"Remote Addr (klien asli)"** pada halaman yang ditampilkan menunjukkan IP klien asli (gamma), **bukan** alamat IP Abbey (10.74.2.2), membuktikan konfigurasi `real_ip_header` pada Nginx berhasil bekerja.
+ 
+# 15
+**Rootkit menginstruksikan pembuatan jalur proxy khusus yang berdiri sendiri. Pada penny buat reverse proxy untuk path /eternal yang menyajikan directory /var/www/eternal, dan pastikan path ini dapat mengeksekusi (rendering) file php. Pada abbey, buat jalur /orion yang menyajikan directory /var/www/orion, secara murni statis tanpa perlu rendering php.**
+
+
+## Konsep
+ 
+Berbeda dengan konfigurasi `ProxyPass "/"` pada Soal 11 (yang meneruskan seluruh trafik root ke cluster backend), path `/eternal` dan `/orion` pada soal ini **tidak diteruskan ke backend mana pun** — keduanya disajikan **langsung oleh Penny dan Abbey sendiri** sebagai web server lokal, berdampingan dengan fungsi reverse proxy yang sudah ada.
+ 
+Agar path khusus ini tidak ikut "tertelan" oleh aturan `ProxyPass "/"` yang sudah berlaku untuk seluruh trafik root, digunakan directive `ProxyPass "<path>" "!"` sebagai pengecualian eksplisit, yang harus dideklarasikan **sebelum** baris `ProxyPass "/"` di dalam file konfigurasi.
+ 
+---
+ 
+## Konfigurasi — Penny (`/eternal`)
+ 
+### Instalasi PHP-FPM dan modul yang dibutuhkan
+ 
+```bash
+apt install -y php-fpm
+a2enmod proxy_fcgi
+```
+ 
+Modul `proxy_fcgi` memungkinkan Apache meneruskan eksekusi file `.php` ke proses PHP-FPM melalui protokol FastCGI.
+ 
+### Direktori dan file aplikasi
+ 
+```bash
+mkdir -p /var/www/eternal
+```
+ 
+File `/var/www/eternal/index.php`:
+```php
+<?php
+echo "<h1>Eternal Vault</h1>\n";
+echo "<p>Halaman ini dirender oleh PHP di node Penny.</p>\n";
+echo "<p>Waktu server: " . date("Y-m-d H:i:s") . "</p>\n";
+?>
+```
+Baris `date()` sengaja disertakan sebagai bukti bahwa file benar-benar dieksekusi PHP-FPM setiap request, bukan ditampilkan sebagai teks statis.
+ 
+### Konfigurasi VirtualHost
+ 
+Ditambahkan pada `/etc/apache2/sites-available/vault-proxy.conf`, di dalam blok `<VirtualHost>` yang sudah ada, **sebelum** baris `ProxyPass "/"`:
+ 
+```apache
+Alias /eternal /var/www/eternal
+ 
+<Directory /var/www/eternal>
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+    DirectoryIndex index.php
+</Directory>
+ 
+<FilesMatch \.php$>
+    SetHandler "proxy:unix:/run/php/php8.4-fpm.sock|fcgi://localhost"
+</FilesMatch>
+ 
+ProxyPass "/eternal" "!"
+```
+ 
+**Penjelasan:**
+- `Alias /eternal /var/www/eternal` — memetakan URL `/eternal` ke folder fisik tersebut.
+- `<FilesMatch \.php$>` + `SetHandler proxy:unix:...` — meneruskan eksekusi file `.php` ke PHP-FPM melalui socket unix, sehingga kode PHP benar-benar dijalankan dan bukan ditampilkan sebagai teks mentah.
+- `ProxyPass "/eternal" "!"` — mengecualikan path ini dari aturan `ProxyPass "/" "balancer://vaultcluster/"` yang sudah ada, sehingga request ke `/eternal` dijawab langsung oleh Penny, bukan diteruskan ke obladi/desmond.
+Restart layanan:
+```bash
+service php8.4-fpm restart
+apache2ctl configtest
+service apache2 restart
+```
+ 
+---
+ 
+## Konfigurasi — Abbey (`/orion`)
+ 
+Lebih sederhana karena bersifat murni statis — tidak memerlukan instalasi PHP atau modul tambahan selain yang sudah aktif dari Soal 11 (`proxy`, `proxy_http`, `proxy_balancer`, `lbmethod_byrequests`, `headers`, `rewrite`).
+ 
+### Direktori dan file statis
+ 
+```bash
+mkdir -p /var/www/orion
+```
+ 
+File `/var/www/orion/index.html`:
+```html
+<h1>Orion Static Gateway</h1>
+<p>Halaman ini murni statis, disajikan langsung oleh Abbey.</p>
+```
+ 
+### Konfigurasi VirtualHost
+ 
+Ditambahkan pada `/etc/apache2/sites-available/core-proxy.conf`, di dalam blok `<VirtualHost>` yang sudah ada, **sebelum** baris `ProxyPass "/"`:
+ 
+```apache
+Alias /orion /var/www/orion
+ 
+<Directory /var/www/orion>
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
+ 
+ProxyPass "/orion" "!"
+```
+ 
+Tidak terdapat blok `FilesMatch`/`SetHandler` karena path ini memang tidak boleh mengeksekusi PHP — murni menyajikan konten statis apa adanya.
+ 
+Restart layanan:
+```bash
+apache2ctl configtest
+service apache2 restart
+```
+ 
+---
+ 
+## Temuan Tambahan — Perbaikan Konfigurasi Obladi dan Desmond
+ 
+Saat proses verifikasi jalur lama (`curl http://penny.K21.com/`), ditemukan bahwa path root (`/`) pada backend area vault (obladi dan desmond) masih menampilkan halaman *default* Apache Debian ("It works!"), bukan konten khusus node. Hal ini terjadi karena `DocumentRoot` (`/var/www/html/`) belum pernah diisi `index.html` kustom sejak konfigurasi awal — hanya subfolder `/arsip/` yang diisi pada Soal 9.
+ 
+**Perbaikan** pada obladi dan desmond:
+```bash
+echo "<h1>Area Vault - $(hostname)</h1><p>Static web server node.</p>" > /var/www/html/index.html
+```
+ 
+Penggunaan `$(hostname)` memungkinkan satu script setup yang identik digunakan di kedua node, dengan konten yang otomatis menyesuaikan nama node masing-masing.
+ 
+---
+ 
+## Pembuktian
+ 
+### 1. Tes lokal (dari node itu sendiri)
+ 
+**Penny** — menguji eksekusi PHP pada `/eternal`:
+```bash
+curl http://localhost/eternal/
+```
+ 
+<img src="assets/soal15_penny localhost eternal.png">
+
+Hasil menampilkan konten yang dirender PHP (termasuk timestamp dinamis), bukan kode PHP mentah — membuktikan `proxy_fcgi` dan PHP-FPM bekerja dengan benar di Penny.
+ 
+**Abbey** — menguji penyajian statis pada `/orion`:
+```bash
+curl http://localhost/orion/
+```
+ 
+<img src="assets/soal15_pembuktian abbey localhost orion.png">
+
+Hasil menampilkan konten HTML statis sesuai isi `index.html` yang dibuat.
+ 
+### 2. Tes dari klien luar via hostname
+ 
+```bash
+curl http://penny.K21.com/eternal/
+curl http://abbey.K21.com/orion/
+```
+ 
+<img src="assets/soal15_client luar penny-eternal abbey-orion.png">
+
+Kedua path dapat diakses dengan benar melalui hostname gerbang dari klien eksternal, membuktikan `Alias` dan pengecualian `ProxyPass "<path>" "!"` berfungsi sebagaimana mestinya tanpa perlu melalui proxy balancer.
+ 
+### 3. Memastikan jalur lama (reverse proxy ke backend) tidak terganggu
+ 
+Penambahan `/eternal` dan `/orion` wajib dipastikan tidak merusak fungsi reverse proxy ke cluster backend yang telah dibangun pada Soal 11.
+ 
+```bash
+curl http://penny.K21.com/
+```
+ 
+<img src="assets/soal15_memastikan path lama - penny.png">
+
+```bash
+curl http://abbey.K21.com/
+```
+ 
+<img src="assets/soal15_memastikan path lama - abbey.png">
+
+Kedua path root tetap berhasil mengembalikan respons dari backend (obladi/desmond untuk Penny, oblada/molly untuk Abbey) melalui mekanisme *load balancing*, membuktikan directive `ProxyPass "/eternal" "!"` dan `ProxyPass "/orion" "!"` berhasil mengecualikan path khusus tanpa mengganggu aturan `ProxyPass "/"` yang sudah ada.
