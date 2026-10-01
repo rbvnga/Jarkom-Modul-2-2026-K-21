@@ -1558,3 +1558,17 @@ curl http://abbey.K21.com/
 <img src="assets/soal15_memastikan path lama - abbey.png">
 
 Kedua path root tetap berhasil mengembalikan respons dari backend (obladi/desmond untuk Penny, oblada/molly untuk Abbey) melalui mekanisme *load balancing*, membuktikan directive `ProxyPass "/eternal" "!"` dan `ProxyPass "/orion" "!"` berhasil mengecualikan path khusus tanpa mengganggu aturan `ProxyPass "/"` yang sudah ada.
+
+## 16
+### Melakukan pengujianMenguji ketahanan gerbang The Mesh (Reverse Proxy) dalam
+### A. menghadapi bombardir trafik/permintaan secara bersamaan menggunakan utilitas ApacheBench (ab) pada dua titik akhir (endpoints): domain utama ([www.K21.com](https://www.K21.com)) dan domain statis (static.K21.com).
+
+### B. Parameter Pengujian
+- Total Requests (-n): 250 permintaan
+- Concurrency Level (-c): 10 permintaan konkuren
+- Klien Penguji: Node beta
+
+### C. Hasil 
+
+
+
