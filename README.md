@@ -1095,3 +1095,111 @@ curl -i -u prabs:'pakar_pinter_jadi_gob***' http://www.K21.com/admin/
 ```
 <img width="612" height="178" alt="soal12_pembuktian2" src="https://github.com/user-attachments/assets/c669d9ce-1ba6-4233-9eff-3770ada8d651" />
 
+## 13
+## 13.1 Deskripsi soal & tujuan
+Tujuan: Memastikan seluruh lalu lintas HTTP dipaksa mengakses nama kanonik (canonical domain) melalui Reverse Proxy.
+
+Persyaratan Ketentuan Redirection:
+Node penny (Apache2): Akses yang mengarah ke IP 10.74.3.2 maupun domain penny.K21.com wajib dialihkan secara permanen (Status Code 301 Moved Permanently) menuju `[www.K21.com](https://www.K21.com)`.
+
+Node abbey (Nginx): Akses yang mengarah ke IP 10.74.2.2 maupun domain abbey.K21.com wajib dialihkan secara sementara (Status Code 302 Moved Temporarily) menuju static.K21.com.
+
+## 13.2 Eksekusi
+### A. Konfigurasi pada Node penny (Apache2)
+jalankan di terminal `penny`
+```c
+# 1. Aktifkan modul rewrite pada Apache
+a2enmod rewrite
+
+# 2. Atur VirtualHost untuk domain kanonik dan Catch-All Redirect 301
+cat << 'EOF' > /etc/apache2/sites-available/penny.conf
+# VirtualHost Utama Canonical (www.K21.com)
+<VirtualHost *:80>
+    ServerName www.K21.com
+    DocumentRoot /var/www/html
+
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    <Directory /var/www/html/admin>
+        AuthType Basic
+        AuthName "Restricted Area"
+        AuthUserFile /etc/apache2/.htpasswd
+        Require valid-user
+    </Directory>
+</VirtualHost>
+
+# VirtualHost Catch-All (IP & penny.K21.com -> Redirect 301)
+<VirtualHost *:80>
+    ServerName penny.K21.com
+    ServerAlias 10.74.3.2
+
+    RewriteEngine On
+    RewriteCond %{HTTP_HOST} !^www\.K21\.com$ [NC]
+    RewriteRule ^(.*)$ http://www.K21.com$1 [R=301,L]
+</VirtualHost>
+EOF
+
+# 3. Restart layanan Apache
+service apache2 restart
+```
+### B. Konfigurasi pada Node abbey (Nginx)
+jalankan di terminal `abbey`
+```c
+# 1. Bersihkan symlink default
+rm -rf /etc/nginx/sites-enabled/*
+
+# 2. Tuliskan Server Block untuk domain kanonik dan Catch-All Redirect 302
+cat << 'EOF' > /etc/nginx/sites-available/abbey
+# Server Block Utama Canonical (static.K21.com)
+server {
+    listen 80;
+    server_name static.K21.com;
+
+    location / {
+        proxy_pass http://vault.K21.com;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+# Catch-All Redirect 302 (abbey.K21.com & IP 10.74.2.2)
+server {
+    listen 80 default_server;
+    server_name abbey.K21.com 10.74.2.2 _;
+
+    return 302 http://static.K21.com$request_uri;
+}
+EOF
+
+# 3. Aktifkan symlink & restart Nginx
+ln -sf /etc/nginx/sites-available/abbey /etc/nginx/sites-enabled/abbey
+nginx -t && service nginx restart
+```
+
+## 13.3 Hasil Verifikasi & Pengujian
+uji coba dari client `beta`
+jalankan perintah pengujian di terminal client untuk membuktikan pengalihan URL:
+A. uji coba node `penny`
+```c
+# Uji akses via domain penny.K21.com
+curl -I http://penny.K21.com/
+
+# Uji akses via IP penny
+curl -I http://10.74.3.2/
+```
+<img width="498" height="256" alt="Tangkapan Layar 2026-10-01 pukul 14 45 41" src="https://github.com/user-attachments/assets/b797f137-f704-49de-b59c-da526740b4a4" />
+B. uji coba node `abbey`
+```c
+# Uji akses via domain abbey.K21.com
+curl -I http://abbey.K21.com/
+
+# Uji akses via IP abbey
+curl -I http://10.74.2.2/
+```
+<img width="533" height="316" alt="soal13_pembuktian2" src="https://github.com/user-attachments/assets/86a75c0b-45c6-466b-b4b6-4a37b5991108" />
+
