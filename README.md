@@ -1891,6 +1891,8 @@ root@alpha:~# curl -H "Host: http.badssl.com" http://outbound.K21.com
 ```
 Perintah ini tetap memakai `outbound.K21.com` (resolusi lewat CNAME), dan hasilnya sama dengan `curl http://http.badssl.com`.
 
+<img src="assets/soal19_pembuktian alpha curl.png">
+
 ### 4.5 Pembuktian hash
 ```
 root@alpha:~# curl -s -H "Host: http.badssl.com" http://outbound.K21.com | md5sum
