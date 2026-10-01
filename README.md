@@ -1699,3 +1699,97 @@ Hasil:
 - Klien di jaringan `10.74.4.0/24` (Switch6) dapat menjangkau DNS server di `10.74.1.0/24` melalui routing `rootkit`, sehingga konektivitas lintas segmen (soal 3) terbukti berfungsi.
 - Setiap TXT record mengembalikan nama hostname yang tepat.
 
+
+# 19
+## 1. Soal
+Membuat record **CNAME** yang mengikat domain internal `outbound.K21.com` ke domain eksternal `http.badssl.com`. Setelah itu menjalankan `curl http://outbound.K21.com` dan memastikan output sesuai dengan isi halaman `http.badssl.com`.
+
+## 2. Tujuan yang diuji
+1. Record CNAME di zona `K21.com` pada **prab** (master) dan tersalin ke **tedd** (slave).
+2. DNS server dapat me-resolve nama eksternal (recursion + forwarder ke `192.168.122.1`).
+3. NAT di **rootkit** meneruskan lalu lintas HTTP klien ke internet.
+
+## 3. Konfigurasi yang dilakukan
+
+### 3.1 Zona di prab (`/etc/bind/jarkom/K21.com`)
+Ditambahkan record berikut. Titik di akhir `http.badssl.com.` wajib agar nama tidak ditempeli `K21.com`.
+
+```
+; Outbound CNAME (Soal 19)
+outbound IN     CNAME   http.badssl.com.
+```
+
+Serial SOA dinaikkan dari `2026093016` menjadi `2026100101` agar tedd menarik zona terbaru.
+
+### 3.2 Opsi BIND di prab dan tedd (`/etc/bind/named.conf.options`)
+Recursion diaktifkan agar klien di subnet lain dapat memperoleh A record tujuan CNAME.
+
+```
+options {
+    directory "/var/cache/bind";
+    forwarders {
+        192.168.122.1;
+    };
+    forward only;
+    recursion yes;
+    allow-recursion { any; };
+    allow-query { any; };
+    auth-nxdomain no;
+    dnssec-validation no;
+    listen-on-v6 { any; };
+};
+```
+
+### 3.3 Penyimpanan konfigurasi (kaitan dengan nomor 20)
+Semua perubahan dimasukkan ke `setup_prab.sh` dan `setup_tedd.sh`, bukan hanya diedit manual. File zona di prab ditulis ulang oleh script setiap dijalankan, sehingga record CNAME harus ada di dalam script. Blok `named.conf.options` juga dibuat selalu ditulis ulang (tanpa guard `grep`) supaya `recursion yes` pasti terterapkan.
+
+Sesuai nomor 20, konfigurasi nomor 18 diabaikan: `abbey` tetap `10.74.2.2` dan tidak ada TTL 15 detik.
+
+## 4. Verifikasi
+
+### 4.1 Serial SOA prab dan tedd sama (dijalankan di prab)
+```
+root@prab:~# dig @10.74.1.2 K21.com SOA +short
+prab.K21.com. root.K21.com. 2026100101 604800 86400 2419200 604800
+root@prab:~# dig @10.74.1.3 K21.com SOA +short
+prab.K21.com. root.K21.com. 2026100101 604800 86400 2419200 604800
+```
+Serial `2026100101` sama di keduanya, sehingga zone transfer berjalan.
+
+### 4.2 Resolusi CNAME dari klien alpha
+```
+root@alpha:~# dig outbound.K21.com
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR
+;; ANSWER SECTION:
+outbound.K21.com.       604800  IN      CNAME   http.badssl.com.
+http.badssl.com.        299     IN      A       104.154.89.105
+;; SERVER: 10.74.1.2#53(10.74.1.2) (UDP)
+```
+Status `NOERROR`, CNAME mengarah ke `http.badssl.com.`, dan A record berhasil didapat melalui forwarder. Ini menunjukkan recursion, forwarder, dan NAT rootkit berfungsi. Query kedua (`dig @10.74.1.2 outbound.K21.com`) memberi hasil sama dengan TTL A record yang menurun, tanda jawaban berasal dari cache.
+
+### 4.3 `curl` polos
+```
+root@alpha:~# curl http://outbound.K21.com
+<title>Welcome to nginx!</title>
+...
+```
+Koneksi berhasil sampai ke server badssl (`104.154.89.105`). Namun curl mengirim `Host: outbound.K21.com`, sedangkan badssl memakai virtual host dan tidak mengenal nama itu. Server pun menjawab dengan halaman default nginx. Ini perilaku server tujuan, bukan kesalahan DNS.
+
+### 4.4 `curl` dengan header Host yang sesuai
+```
+root@alpha:~# curl -H "Host: http.badssl.com" http://outbound.K21.com
+<title>http.badssl.com</title>
+<style>body { background: red; }</style>
+...
+<h1 style="font-size: 8vw;">http.badssl.com</h1>
+```
+Perintah ini tetap memakai `outbound.K21.com` (resolusi lewat CNAME), dan hasilnya sama dengan `curl http://http.badssl.com`.
+
+### 4.5 Pembuktian hash
+```
+root@alpha:~# curl -s -H "Host: http.badssl.com" http://outbound.K21.com | md5sum
+53835924f2cf2844f4b1a7ef89658348  -
+root@alpha:~# curl -s http://http.badssl.com | md5sum
+53835924f2cf2844f4b1a7ef89658348  -
+```
+Hash identik, jadi isi halaman yang diperoleh lewat `outbound.K21.com` sama dengan `http.badssl.com`.
