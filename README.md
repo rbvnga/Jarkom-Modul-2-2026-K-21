@@ -197,9 +197,6 @@ echo "nameserver 192.168.122.1" > /etc/resolv.conf
 <img src="assets/soal3_pembuktian2.png">
 
 ## 4
-**ISI SOALNYA APA**
-
-## 4
 
 **Penjaga Direktori mulai menuliskan hukum The Mesh. Pada node prab, bangun zona <xxxx>.com sebagai authoritative dengan SOA yang menunjuk ke prab.<xxxx>.com, serta tambahkan catatan NS untuk prab.<xxxx>.com dan tedd.<xxxx>.com. Buat A record untuk prab.<xxxx>.com dan tedd.<xxxx>.com yang mengarah ke alamat IP mereka masing-masing, serta A record apex <xxxx>.com yang mengarah ke gerbang aplikasi dinamis (penny). Aktifkan fitur notify dan allow-transfer ke tedd, lalu set forwarders ke 192.168.122.1. Di node tedd, tarik zona <xxxx>.com dari master dan pastikan server menjawab secara authoritative. Setelah fondasi nama ini berdiri kokoh, perbarui urutan resolver pada seluruh Entitas non-router menjadi: IP prab, IP tedd, lalu 192.168.122.1. Verifikasi bahwa query ke domain apex maupun hostname di dalam zona dijawab dengan benar oleh prab atau tedd.**
 
@@ -363,7 +360,7 @@ zone "K21.com" {
 dig K21.com
 ```
 
-<img src="assets/soal3_pembuktian3.png">
+<img src="assets/soal4_pembuktian3.png">
 
 - `SERVER: 10.74.1.2`: query dijawab langsung oleh Prab, bukan diteruskan ke `192.168.122.1`. Ini membuktikan urutan `resolv.conf` sudah benar.
 - `aa` (*Authoritative Answer*) di flags: Prab menjawab sebagai pemilik zona, bukan sekadar cache/forward dari server lain.
@@ -375,7 +372,7 @@ dig K21.com
 dig prab.K21.com
 ```
 
-<img src="assets/soal3_pembuktian4.png">
+<img src="assets/soal4_pembuktian4.png">
 
 Hostname `prab.K21.com` juga dijawab dengan `aa`, dan IP-nya cocok dengan IP asli Prab (`10.74.1.2`). Ini membuktikan record `A` untuk name server sudah dikonfigurasi benar di zona.
 
@@ -385,7 +382,7 @@ Hostname `prab.K21.com` juga dijawab dengan `aa`, dan IP-nya cocok dengan IP asl
 dig NS K21.com
 ```
 
-<img src="assets/soal3_pembuktian5.png">
+<img src="assets/soal4_pembuktian5.png">
 
 - Dua record NS terdaftar untuk zona `K21.com`, yaitu `prab.K21.com` dan `tedd.K21.com`.
 - `ADDITIONAL SECTION` otomatis melampirkan IP masing-masing NS (*glue records*), menunjukkan record `A` Prab dan Tedd terhubung dengan benar ke record NS-nya.
@@ -397,7 +394,7 @@ dig NS K21.com
 dig @10.74.1.3 K21.com
 ```
 
-<img src="assets/soal3_pembuktian6.png">
+<img src="assets/soal4_pembuktian6.png">
 
 - `SERVER: 10.74.1.3#53`: query dikirim dan dijawab langsung oleh Tedd (bukan diteruskan ke Prab atau forwarder luar). Ini membuktikan Tedd sudah punya salinan zona dan dapat menjawab query DNS secara mandiri.
 - `aa` di flags: Tedd menganggap dirinya *authoritative* untuk `K21.com`. Ini menunjukkan zone transfer berhasil dan Tedd memiliki salinan zona yang lengkap, persis seperti Prab. Jika transfer gagal, Tedd tidak akan memiliki data zona sehingga tidak bisa menjawab dengan flag `aa`.
