@@ -1741,7 +1741,6 @@ OK
 Starting domain name service...: named.
 abbey.K21.com.    15    IN    A    203.0.113.18
 ```
- 
 Perintah dijalankan tepat pada **18:07:30 UTC**, dengan `date` dicetak sebagai penanda waktu perubahan.
  
 ## 4. Sinkronisasi ke tedd
@@ -1758,7 +1757,6 @@ prab.K21.com. root.K21.com. 2026093015 604800 86400 2419200 604800
 root@tedd:~# dig @10.74.1.3 abbey.K21.com +noall +answer
 abbey.K21.com.    15    IN    A    203.0.113.18
 ```
- 
 Serial tedd ikut naik ke `2026093015` dan record abbey ikut berubah, jadi zone transfer (notify + allow-transfer) berjalan.
  
 ## 5. Verifikasi tiga fase (dari alpha)
