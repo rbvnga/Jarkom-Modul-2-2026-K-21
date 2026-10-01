@@ -836,9 +836,195 @@ curl -i http://core.K21.com/profil
 # 11
 **Konfigurasikan Penny (menggunakan Apache) sebagai reverse proxy yang mengarah ke semua node di area vault (Obladi & Desmond). Sementara itu, konfigurasikan Abbey (menggunakan Nginx) sebagai reverse proxy menuju area core (Oblada & Molly). Pastikan kedua gerbang ini meneruskan identitas asli pengunjung ke server backend dengan melakukan forwarding header Host dan X-Real-IP. Buktikan bahwa Penny dan Abbey berhasil mendistribusikan lalu lintas dengan tepat.**
 
+**Gerbang (reverse proxy):** Penny (area vault), Abbey (area core)
+**Backend area vault:** obladi (10.74.1.4), desmond (10.74.1.5)
+**Backend area core:** oblada (10.74.1.6), molly (10.74.1.7)
+## Konfigurasi
+
+### 11.1 Abbey — reverse proxy ke area core
+ 
+File: `/etc/apache2/sites-available/core-proxy.conf`
+ 
+```apache
+<Proxy "balancer://corecluster">
+    BalancerMember "http://10.74.1.6"
+    BalancerMember "http://10.74.1.7"
+</Proxy>
+ 
+<VirtualHost *:80>
+    ServerName abbey.K21.com
+ 
+    RewriteEngine On
+    RewriteCond %{REMOTE_ADDR} (.+)
+    RewriteRule .* - [E=REAL_IP:%1]
+ 
+    ProxyPreserveHost On
+    RequestHeader set X-Real-IP %{REAL_IP}e
+ 
+    ProxyPass "/" "balancer://corecluster/"
+    ProxyPassReverse "/" "balancer://corecluster/"
+ 
+    ErrorLog ${APACHE_LOG_DIR}/core-proxy-error.log
+    CustomLog ${APACHE_LOG_DIR}/core-proxy-access.log combined
+</VirtualHost>
+```
+ 
+Modul yang diaktifkan: `proxy`, `proxy_http`, `proxy_balancer`, `lbmethod_byrequests`, `headers`, `rewrite`.
+ 
+**Catatan teknis:** header `X-Real-IP` tidak diambil langsung dari `%{REMOTE_ADDR}`, melainkan melalui perantara `mod_rewrite` (`RewriteRule ... [E=REAL_IP:%1]`). Hal ini diperlukan karena `RequestHeader` yang membaca `REMOTE_ADDR` secara langsung mengalami masalah urutan pemrosesan (timing) pada beberapa versi Apache, sehingga nilainya kerap tidak terbaca (`null`). Dengan menampung nilai `REMOTE_ADDR` ke variabel environment kustom (`REAL_IP`) melalui `mod_rewrite` terlebih dahulu, `RequestHeader` dapat membacanya dengan tepat waktu.
 
 
+### 1.3 Penny — reverse proxy ke area vault
+ 
+File: `/etc/apache2/sites-available/vault-proxy.conf`
+ 
+```apache
+<Proxy "balancer://vaultcluster">
+    BalancerMember "http://10.74.1.4"
+    BalancerMember "http://10.74.1.5"
+</Proxy>
+ 
+<VirtualHost *:80>
+    ServerName penny.K21.com
+ 
+    RewriteEngine On
+    RewriteCond %{REMOTE_ADDR} (.+)
+    RewriteRule .* - [E=REAL_IP:%1]
+ 
+    ProxyPreserveHost On
+    RequestHeader set X-Real-IP %{REAL_IP}e
+ 
+    ProxyPass "/" "balancer://vaultcluster/"
+    ProxyPassReverse "/" "balancer://vaultcluster/"
+ 
+    ErrorLog ${APACHE_LOG_DIR}/vault-error.log
+    LogFormat "%h Host:%{Host}i X-Real-IP:%{X-Real-IP}i \"%r\" %>s" proxytest
+    CustomLog ${APACHE_LOG_DIR}/vault-access.log proxytest
+</VirtualHost>
+```
+ 
+Modul yang diaktifkan: `proxy`, `proxy_http`, `proxy_balancer`, `lbmethod_byrequests`, `headers`, `rewrite`. Mekanisme penangkapan `X-Real-IP` memakai pendekatan `mod_rewrite` yang sama seperti di Abbey.
 
 
+## 11.2 Bukti Forwarding Header (Host & X-Real-IP)
+```bash
+# console ablada
+cat << 'EOF' > /var/www/core/heades.php
+<?php
+echo "Host yang diterima backend: " . $_SERVER['HTTP_HOST'] . "<br>\n";
+echo "X-Real-IP yang diterima backend: " . $_SERVER['HTTP_X_REAL_IP'] . "<br>\n";
+echo "Remote Addr asli (dari sudut pandang backend): " . $_SERVER['REMOTE_ADDR'] . "<br>\n";
+echo "Server IP (menunjukkan backend mana yang menjawab): " . $_SERVER['SERVER_ADDR'] . "<br>\n";
+EOF
+```
+Pengujian dilakukan dari klien **gamma** (10.74.4.4) ke gerbang **abbey**:
+ 
+```
+root@gamma:~# curl http://abbey.K21.com/headers
+Host yang diterima backend: abbey.K21.com
+X-Real-IP yang diterima backend: 10.74.4.4
+Remote Addr asli (dari sudut pandang backend): 10.74.2.2
+Server IP (menunjukkan backend mana yang menjawab): 10.74.1.6
+```
+ 
+**Analisis:**
+ 
+| Header | Nilai diterima backend | Keterangan |
+|---|---|---|
+| `Host` | `abbey.K21.com` | Sesuai hostname gerbang yang diakses klien, **bukan** IP backend — membuktikan `ProxyPreserveHost On` berhasil meneruskan identitas Host asli ke backend. |
+| `X-Real-IP` | `10.74.4.4` | Identik dengan IP klien asli (gamma), membuktikan header `X-Real-IP` berhasil disisipkan oleh proxy dan diteruskan ke backend. |
+| `Remote Addr` | `10.74.2.2` | Ini adalah IP **abbey** (gerbang), dilihat dari sudut pandang koneksi TCP langsung ke backend. Nilai ini memang seharusnya IP gerbang, karena secara teknis abbey-lah yang membuka koneksi ke backend — inilah justru alasan header `X-Real-IP` diperlukan: untuk mengetahui identitas klien asli meskipun koneksi fisik berasal dari proxy. |
+ 
+Kesimpulan: **identitas asli pengunjung (Host & IP klien) berhasil diteruskan dengan benar** oleh gerbang Abbey ke server backend.
+ 
+---
+ 
+## 11.3 Bukti Load Balancing (Distribusi Lalu Lintas)
+ 
+Pengujian dilakukan dengan mengirim 10 kali request berturut-turut dari klien **gamma** ke `http://abbey.K21.com/`:
+ 
+```
+root@gamma:~# for i in {1..10}; do curl -s http://abbey.K21.com/ | grep "Server IP"; done
+ 
+Server IP: 10.74.1.7
+Server IP: 10.74.1.6
+Server IP: 10.74.1.7
+Server IP: 10.74.1.6
+Server IP: 10.74.1.7
+Server IP: 10.74.1.6
+Server IP: 10.74.1.7
+Server IP: 10.74.1.6
+Server IP: 10.74.1.7
+Server IP: 10.74.1.6
+```
+ <img src="assets/soal11_bukti load balancing.png">
+**Analisis:**
+ 
+| IP Backend | Jumlah menjawab dari 10 request |
+|---|---|
+| 10.74.1.6 (oblada) | 5 kali |
+| 10.74.1.7 (molly) | 5 kali |
+ 
+Request yang dikirim secara berurutan dijawab **bergantian sempurna** antara oblada dan molly (pola round-robin 1:1). Ini membuktikan `mod_proxy_balancer` dengan algoritma `lbmethod_byrequests` berhasil **mendistribusikan lalu lintas secara merata** ke kedua anggota backend di area core, tidak hanya menumpuk ke satu server saja.
 
-
+## 11.4 Bukti Forwarding Header & Load Balancing — Penny (Area Vault)
+ 
+Pengujian dilakukan dengan mengirim dua rangkaian request dari klien **gamma** ke gerbang **penny**:
+- 10× `curl http://penny.K21.com/arsip/`
+- 10× `curl http://penny.K21.com/`
+Total 20 request dikirim. Log akses dipantau secara bersamaan pada kedua backend (obladi dan desmond).
+ 
+### 11.4.1 Log akses di Obladi
+ 
+```
+root@obladi:~# tail -f /var/log/apache2/vault-access.log
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+```
+Total: 10 baris (`wc -l` = 10)
+ 
+### 11.4.2 Log akses di Desmond
+ 
+```
+root@desmond:~# tail -10 /var/log/apache2/vault-access.log
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET /arsip/ HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+10.74.3.2 Host:penny.K21.com X-Real-IP:10.74.4.4 "GET / HTTP/1.1" 200
+```
+Total: 10 baris (`wc -l` = 10)
+ 
+ <img src="assets/soal11_ Bukti Forwarding Header & Load Balancing.png">
+### 11.4.3 Analisis
+ 
+**Forwarding header:**
+ 
+| Header | Nilai di log backend | Keterangan |
+|---|---|---|
+| `%h` (IP koneksi langsung) | `10.74.3.2` (IP Penny) | Sesuai ekspektasi — ini adalah IP gerbang yang membuka koneksi TCP ke backend, bukan IP klien. |
+| `Host` | `penny.K21.com` | Sesuai hostname gerbang yang diakses klien — membuktikan `ProxyPreserveHost On` berhasil meneruskan identitas Host asli. |
+| `X-Real-IP` | `10.74.4.4` | IP klien asli (gamma), bukan IP Penny — membuktikan header `X-Real-IP` berhasil disisipkan dan diteruskan ke backend. |
+ 
+**Distribusi lalu lintas (load balancing):**
+ 
+| Endpoint | Total request dikirim | Diterima Obladi | Diterima Desmond |
+|---|---|---|---|
+| `/arsip/` | 10 | 5 | 5 |
+| `/` | 10 | 5 | 5 |
+| **Total** | **20** | **10** | **10** |
+ 
+Kedua backend menerima jumlah request yang **sama rata (10:10)** dari total 20 request yang dikirim, dengan pembagian 5:5 pada masing-masing endpoint. Hal ini membuktikan `mod_proxy_balancer` pada Penny berhasil mendistribusikan lalu lintas secara merata ke obladi dan desmond sesuai mekanisme round-robin.
