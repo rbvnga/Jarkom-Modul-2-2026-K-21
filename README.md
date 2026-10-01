@@ -1185,7 +1185,7 @@ nginx -t && service nginx restart
 uji coba dari client `beta`
 jalankan perintah pengujian di terminal client untuk membuktikan pengalihan URL:
 
-A. uji coba node `penny`
+### A. uji coba node `penny`
 
 ```c
 curl -I http://penny.K21.com/
@@ -1193,7 +1193,7 @@ curl -I http://10.74.3.2/
 ```
 <img width="498" height="256" alt="Tangkapan Layar 2026-10-01 pukul 14 45 41" src="https://github.com/user-attachments/assets/b797f137-f704-49de-b59c-da526740b4a4" />
 
-B. uji coba node `abbey`
+### B. uji coba node `abbey`
 
 ```c
 curl -I http://abbey.K21.com/
