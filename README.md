@@ -1793,3 +1793,7 @@ root@alpha:~# curl -s http://http.badssl.com | md5sum
 53835924f2cf2844f4b1a7ef89658348  -
 ```
 Hash identik, jadi isi halaman yang diperoleh lewat `outbound.K21.com` sama dengan `http.badssl.com`.
+
+
+# 20
+**Setelah semua penyelesaian selesai, pastikan semua service dan konfigurasi yang telah dikerjakan dari awal tetap berjalan normal dan berstatus autostart saat node di-restart (khusus untuk kasus ini, abaikan konfigurasi nomor 18 dan biarkan koordinat kembali normal).**
