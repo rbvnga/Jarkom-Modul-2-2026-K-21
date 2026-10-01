@@ -1028,3 +1028,70 @@ Total: 10 baris (`wc -l` = 10)
 | **Total** | **20** | **10** | **10** |
  
 Kedua backend menerima jumlah request yang **sama rata (10:10)** dari total 20 request yang dikirim, dengan pembagian 5:5 pada masing-masing endpoint. Hal ini membuktikan `mod_proxy_balancer` pada Penny berhasil mendistribusikan lalu lintas secara merata ke obladi dan desmond sesuai mekanisme round-robin.
+
+## 12
+## 12.1 Deskripsi soal & tujuan
+Tujuan: Mengamankan direktori rahasia `/admin` di server `penny` menggunakan fitur basic authentication
+
+Persyaratan: Memblokir seluruh akses tanpa kredensial `401 Unauthorized` dan hanya mengizinkan masuk pengguna yang menyertakan kombinasi kredensial username: `prabs` dan password: `pakar_pinter_jadi_gob***`
+
+## 12.2 Eksekusi 
+Eksekusi blok perintah berikut di terminal node `penny`:
+```c
+# 1. Install apache2-utils untuk membuat berkas kredensial
+apt-get update && apt-get install -y apache2-utils
+
+# 2. Buat direktori /admin dan dokumen rahasia
+mkdir -p /var/www/html/admin
+echo "<h1>Dokumen Rahasia Sindikat</h1>" > /var/www/html/admin/index.html
+
+# 3. Generate berkas .htpasswd berisi kredensial terenkripsi
+htpasswd -c -b /etc/apache2/.htpasswd prabs "pakar_pinter_jadi_gob***"
+
+# 4. Tambahkan direktif Basic Authentication pada VirtualHost penny.conf
+cat << 'EOF' > /etc/apache2/sites-available/penny.conf
+<VirtualHost *:80>
+    ServerName www.K21.com
+    ServerAlias penny.K21.com
+    DocumentRoot /var/www/html
+
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    # Proteksi Basic Auth untuk path /admin
+    <Directory /var/www/html/admin>
+        AuthType Basic
+        AuthName "Restricted Area"
+        AuthUserFile /etc/apache2/.htpasswd
+        Require valid-user
+    </Directory>
+</VirtualHost>
+EOF
+
+# 5. Aktifkan konfigurasi & restart layanan Apache
+a2dissite 000-default.conf 2>/dev/null
+a2ensite penny.conf
+a2enmod auth_basic
+service apache2 restart
+```
+## 12.3 Analisis Perintah Utama
+Pengamanan direktori `/admin` mengandalkan modul Apache `auth_basic` serta utilitas `htpasswd` untuk mengenkripsi password. Di dalam VirtualHost, blok `<Directory` `/var/www/html/admin>` disisipi direktif `AuthType Basic` dan `AuthName "Restricted Area"` untuk mengaktifkan dialog autentikasi. Jalur berkas kata sandi ditentukan melalui `AuthUserFile /etc/apache2/.htpasswd`, sedangkan direktif Require valid-user memastikan hanya pengguna dengan autentikasi yang valid yang diberikan izin akses. Setiap permintaan tanpa header autentikasi yang sesuai akan ditolak secara otomatis oleh Apache dengan status respons HTTP 401 Unauthorized
+
+## 12.4 Hasil Verifikasi & Pengujian
+Pengujian dilakukan dari terminal klien (beta) menggunakan perintah curl:
+
+Uji akses tanpa kredensial:
+```c
+curl -i http://www.K21.com/admin/
+```
+<img width="679" height="620" alt="soal12_pembutkian1" src="https://github.com/user-attachments/assets/e1693140-7f92-436a-a293-aec50c644d4f" />
+
+Uji akses dengan kredensial benar:
+```c
+curl -i -u prabs:'pakar_pinter_jadi_gob***' http://www.K21.com/admin/
+```
+<img width="612" height="178" alt="soal12_pembuktian2" src="https://github.com/user-attachments/assets/c669d9ce-1ba6-4233-9eff-3770ada8d651" />
+
