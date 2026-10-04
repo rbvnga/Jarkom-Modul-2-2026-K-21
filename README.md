@@ -934,8 +934,10 @@ EOF
 ```
 Pengujian dilakukan dari klien **gamma** (10.74.4.4) ke gerbang **abbey**:
  
+```bash 
+curl http://abbey.K21.com/headers
 ```
-root@gamma:~# curl http://abbey.K21.com/headers
+```
 Host yang diterima backend: abbey.K21.com
 X-Real-IP yang diterima backend: 10.74.4.4
 Remote Addr asli (dari sudut pandang backend): 10.74.2.2
