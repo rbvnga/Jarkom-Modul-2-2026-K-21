@@ -838,37 +838,55 @@ curl -i http://core.K21.com/profil
 **Backend area core:** oblada (10.74.1.6), molly (10.74.1.7)
 ## Konfigurasi
 
-### 11.1 Abbey — reverse proxy ke area core
+## 11.1 Abbey: reverse proxy ke area core (Nginx)
  
-File: `/etc/apache2/sites-available/core-proxy.conf`
+Dikonfigurasi lewat `setup_abbey.sh`, file `/etc/nginx/sites-available/core-proxy`:
  
-```apache
-<Proxy "balancer://corecluster">
-    BalancerMember "http://10.74.1.6"
-    BalancerMember "http://10.74.1.7"
-</Proxy>
+```nginx
+upstream corecluster {
+    server 10.74.1.6;
+    server 10.74.1.7;
+}
  
-<VirtualHost *:80>
-    ServerName abbey.K21.com
+# Soal 13: redirect sementara untuk abbey.K21.com dan IP 10.74.2.2
+server {
+    listen 80 default_server;
+    server_name abbey.K21.com 10.74.2.2;
+    return 302 http://static.K21.com$request_uri;
+}
  
-    RewriteEngine On
-    RewriteCond %{REMOTE_ADDR} (.+)
-    RewriteRule .* - [E=REAL_IP:%1]
+# Gerbang utama (nama kanonik)
+server {
+    listen 80;
+    server_name static.K21.com;
  
-    ProxyPreserveHost On
-    RequestHeader set X-Real-IP %{REAL_IP}e
+    access_log /var/log/nginx/core-proxy-access.log;
+    error_log  /var/log/nginx/core-proxy-error.log;
  
-    ProxyPass "/" "balancer://corecluster/"
-    ProxyPassReverse "/" "balancer://corecluster/"
+    # Soal 15: /orion murni statis
+    location /orion/ {
+        alias /var/www/orion/;
+        index index.html;
+    }
+    location = /orion {
+        return 301 /orion/;
+    }
  
-    ErrorLog ${APACHE_LOG_DIR}/core-proxy-error.log
-    CustomLog ${APACHE_LOG_DIR}/core-proxy-access.log combined
-</VirtualHost>
+    # Soal 11: reverse proxy ke area core
+    location / {
+        proxy_pass http://corecluster;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
 ```
  
-Modul yang diaktifkan: `proxy`, `proxy_http`, `proxy_balancer`, `lbmethod_byrequests`, `headers`, `rewrite`.
+**Penjelasan:**
  
-**Catatan teknis:** header `X-Real-IP` tidak diambil langsung dari `%{REMOTE_ADDR}`, melainkan melalui perantara `mod_rewrite` (`RewriteRule ... [E=REAL_IP:%1]`). Hal ini diperlukan karena `RequestHeader` yang membaca `REMOTE_ADDR` secara langsung mengalami masalah urutan pemrosesan (timing) pada beberapa versi Apache, sehingga nilainya kerap tidak terbaca (`null`). Dengan menampung nilai `REMOTE_ADDR` ke variabel environment kustom (`REAL_IP`) melalui `mod_rewrite` terlebih dahulu, `RequestHeader` dapat membacanya dengan tepat waktu.
+- `upstream corecluster` mendefinisikan dua backend. Tanpa parameter tambahan, Nginx membagi permintaan secara **round-robin**.
+- `proxy_set_header Host $host` meneruskan nama domain yang diminta klien.
+- `proxy_set_header X-Real-IP $remote_addr` meneruskan IP klien sebenarnya.
+- Server block pertama dan `/orion` termasuk soal 13 dan 15. Keduanya ditulis di file yang sama karena satu node hanya punya satu konfigurasi gerbang.
 
 
 ### 1.3 Penny — reverse proxy ke area vault

@@ -293,12 +293,12 @@ for i in {1..10}; do curl -s http://penny.K21.com/ | grep "Server IP"; done
 # ============ PEMBUKTIAN MOLLY OBLADA (core) ==============
 # BAGIAN A: Bukti forwarding Host & X-Real-IP
 # CONSOLE MOLLY & OBLADA
-cat << 'EOF' > /var/www/core/heades.php
+cat << 'EOF' > /var/www/core/headers.php
 <?php
 echo "Host yang diterima backend: " . $_SERVER['HTTP_HOST'] . "<br>\n";
-echo "X-Real-IP yang diterima backend: " . $_SERVER['HTTP_X_REAL_IP'] . "<br>\n";
-echo "Remote Addr asli (dari sudut pandang backend): " . $_SERVER['REMOTE_ADDR'] . "<br>\n";
-echo "Server IP (menunjukkan backend mana yang menjawab): " . $_SERVER['SERVER_ADDR'] . "<br>\n";
+echo "X-Real-IP yang diterima backend: " . ($_SERVER['HTTP_X_REAL_IP'] ?? '-') . "<br>\n";
+echo "Remote Addr (dari sudut pandang backend): " . $_SERVER['REMOTE_ADDR'] . "<br>\n";
+echo "Server IP (backend yang menjawab): " . $_SERVER['SERVER_ADDR'] . "<br>\n";
 EOF
 
 # CONSOLE SELAIN MOLLY & OBLADA 
