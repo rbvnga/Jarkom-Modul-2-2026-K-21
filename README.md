@@ -1586,6 +1586,9 @@ Kedua path root tetap berhasil mengembalikan respons dari backend (obladi/desmon
 - Klien Penguji: Node beta
 
 ### C. Hasil 
+<img width="1470" height="956" alt="soal16_pembuktian2" src="https://github.com/user-attachments/assets/50cddd1b-1e74-426c-ae6b-07600daf8e30" />
+<img width="1470" height="956" alt="soal16_pembuktian1" src="https://github.com/user-attachments/assets/25619417-6352-43a5-abca-c6ccea554997" />
+
 
 # 17
 **Tambahkan TXT record pada DNS untuk semua klien sayap kiri dan sayap kanan (Alpha, Beta, Gamma, Delta, Epsilon). Jika DNS di-query TXT terhadap nama domain mereka (contoh: alpha.<xxxx>.com), sistem harus mengembalikan teks berupa nama hostname mereka masing-masing (contoh: "alpha").**
